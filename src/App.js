@@ -1,22 +1,56 @@
-import React from 'react'
-import { Upload, Button } from 'antd';
+import React, { useState } from 'react'
+import { Upload, Button, Progress } from 'antd';
+import 'antd/dist/antd.css';
 import { UploadOutlined } from '@ant-design/icons';
 import LargeFileUpload from './LargeFileUpload'
-const props = {
-  name: 'file',
-  action: '',
-  customRequest: function(file) {
-    new LargeFileUpload({file})
-  }
-};
+import './App.css'
 
+let largeFileUpload = new LargeFileUpload()
 function App() {
+  const [sliceList, setSliceList] = useState([])
+  const props = {
+    name: 'file',
+    action: '',
+    fileList: [],
+    customRequest: file => {
+      setSliceList([])
+      largeFileUpload.addFile({
+        file,
+        sliceSize: 1024 * 10,
+        setSliceList
+      })
+      console.log(largeFileUpload)
+    }
+  };
   return (
-    <Upload {...props}>
-      <Button>
-        <UploadOutlined /> Click to Upload
-      </Button>
-    </Upload>
+    <>
+      <Upload {...props}>
+        <Button>
+          <UploadOutlined /> Click to Upload
+        </Button>
+      </Upload>
+      {sliceList.length ? 
+        <div className="slice-list-container">
+          {sliceList.map((item, index) => {
+              return (
+                <>
+                  <span>{item.filename}</span>
+                  <Progress key={index} percent={item.progress} status={item.status ? "active" : "exception"} />
+                  
+                  {item.status ?
+                    "" :
+                    <Button onClick={() => { largeFileUpload.updateFile(item) }}>重试</Button>
+                  }
+                </>
+              )
+            })
+          }
+          <Button onClick={() => largeFileUpload.retryAll()}>重试全部</Button>
+        </div> :
+        ''
+      }
+      
+    </>
   )
 }
 export default App;

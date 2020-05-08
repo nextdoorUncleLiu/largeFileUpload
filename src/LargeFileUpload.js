@@ -1,11 +1,10 @@
 import axiosInstance from './initOptions'
   
 export default class LargeFileUpload {
-    constructor({ file, sliceSize = 4, totalConcurrent = 2 }) {
-        this._sliceSize = sliceSize // 切割每份大小
+    constructor() {
+        this._sliceSize = null
         this._sliceOrder = 0 //切割多少份
-        this._metaFile = file.file // 源文件
-        this._totalConcurrent = totalConcurrent //总并发
+        this._metaFile = null
         this._flowTypeHandle = {
             'add': () => {
                 console.log('添加一项')
@@ -17,6 +16,7 @@ export default class LargeFileUpload {
                 return false
             }
         }
+        this.setSliceList = null
         let target = {
             count: 0
         }
@@ -24,7 +24,15 @@ export default class LargeFileUpload {
             set: this.setConcurrent.bind(this)
         }
         this._concurrentRequest = new Proxy(target, handler) // 监听并始终保持最高数量请求
-        this._sliceList = [] // generator 队列
+        this._sliceList = [] // 切片队列
+        this._progressList = [] // 进度队列
+        this._folder = new Date().getTime()
+    }
+    addFile({ file, sliceSize = 1, totalConcurrent = 2, setSliceList }) {
+        this._sliceSize = sliceSize * 1024 // 切割每份大小
+        this._metaFile = file.file // 源文件
+        this._totalConcurrent = totalConcurrent //总并发
+        this.setSliceList = setSliceList
         this.sliceFile()
     }
     /**
@@ -43,37 +51,93 @@ export default class LargeFileUpload {
         for (let i = 1; i <= _sliceOrder; ++i) {
             let end = i * _sliceSize
             // 每一个切片文件添加到上传队列
-            let formData = new FormData()
-            formData.set('file', _metaFile.slice(start, i * _sliceSize), `${i}-${_metaFile.name}`)
-            this._sliceList.push(formData)
+            let file = _metaFile.slice(start, i * _sliceSize)
+            let filename = `${i}-${_metaFile.name}`
+            let obj = {
+                index: i,
+                file,
+                filename,
+                progress: 0,
+                status: true
+            }
+            this._sliceList.push(obj)
+            this._progressList.push(obj)
             start = end
         }
+        this.setSliceList(this._progressList)
         this.startConcurrent()
     }
     /**
      * startConcurrent 初始化执行最大并发
      */
     startConcurrent() {
-        for (let i = this._concurrentRequest.count; i < this._totalConcurrent; ++i) {
+        for (let i = 0; i < this._totalConcurrent; ++i) {
             this.sliceRefresh()
         }
     }
     /**
      * uploadFile 上传文件
-     * @param {formData} formData 文件
+     * @param {file} file 对象
      */
-    uploadFile(formData) {
+    uploadFile(file) {
+        const { filename } = file
+        let formData = new FormData()
+        formData.set('file', file.file, filename)
+        // 切片文件后端存放位置
+        formData.set('foldname', this._folder)
+        let curProgress = this._progressList[file.index - 1]
+        curProgress.progress = 0
+        this.setSliceList([...this._progressList])
         axiosInstance({
             url: '/blob',
             method: 'post',
             header: {
                 "Content-Type": "multipart/form-data"
             },
+            onUploadProgress: e => {
+                const { loaded, total } = e
+                curProgress.progress = Math.ceil(loaded / total * 100)
+                this.setSliceList([...this._progressList])
+            },
             data: formData
         }).then(() => {
             this._concurrentRequest['flowType'] = 'done'
-            --this._concurrentRequest.count
+            if ((file.index === 1 || file.index === 3) && curProgress.status) {
+                curProgress.status = false
+                this.setSliceList([...this._progressList])
+            } else {
+                if (!curProgress.status) {
+                    curProgress.status = true
+                    this.setSliceList([...this._progressList])
+                    let curIndex = this._sliceList.findIndex(value => {
+                        return value.index === file.index
+                    })
+                    this._sliceList.splice(curIndex, 1)
+                    this._concurrentRequest['count'] = this._concurrentRequest.count - 1
+                }
+                console.log(this._concurrentRequest['count'])
+                this._concurrentRequest['count'] = this._concurrentRequest.count - 1
+            }
+            
+        }).catch(() => {
+            curProgress.status = false
+            this.setSliceList([...this._progressList])
         })
+    }
+    /**
+     * updateFile 更新文件上传
+     * @param {object} file 重试单文件
+     */
+    updateFile(file) {
+        this._sliceList.push(file)
+        this.uploadFile(file)
+    }
+    /**
+     * retryAll 重试所有失败的切片上传
+     */
+    retryAll() {
+        this._sliceList = this._progressList.filter(item => !item.status)
+        this.startConcurrent()
     }
     /**
      * setConcurrent 设置并发
