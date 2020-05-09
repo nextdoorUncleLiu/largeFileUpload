@@ -2,9 +2,6 @@ import axiosInstance from './initOptions'
   
 export default class LargeFileUpload {
     constructor() {
-        this._sliceSize = null
-        this._sliceOrder = 0 //切割多少份
-        this._metaFile = null
         this._flowTypeHandle = {
             'add': () => {
                 console.log('添加一项')
@@ -16,6 +13,12 @@ export default class LargeFileUpload {
                 return false
             }
         }
+        this.init()
+    }
+    init() {
+        this._sliceSize = null
+        this._sliceOrder = 0 //切割多少份
+        this._metaFile = null
         this.setProgressList = null
         let target = {
             count: 0
@@ -26,7 +29,7 @@ export default class LargeFileUpload {
         this._concurrentRequest = new Proxy(target, handler) // 监听并始终保持最高数量请求
         this._sliceList = [] // 切片队列
         this._progressList = [] // 进度队列
-        this._folder = new Date().getTime()
+        this._folder = new Date().getTime() + ''
     }
     addFile({ file, sliceSize = 1, totalConcurrent = 2, setProgressList }) {
         this._sliceSize = sliceSize * 1024 // 切割每份大小
@@ -197,5 +200,12 @@ export default class LargeFileUpload {
      */
     mergeFile() {
         console.log('合并文件')
+        axiosInstance({
+            url: '/merge',
+            method: 'post',
+            data: JSON.stringify({
+                foldname: this._folder
+            })
+        })
     }
 }

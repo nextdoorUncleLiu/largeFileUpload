@@ -14,6 +14,7 @@ function App() {
     fileList: [],
     customRequest: file => {
       setProgressList([])
+      largeFileUpload.init()
       largeFileUpload.addFile({
         file,
         sliceSize: 1024 * 10,
