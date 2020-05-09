@@ -117,28 +117,22 @@ export default class LargeFileUpload {
             },
             data: this.setFormData(file)
         }).then(() => {
-            // 如果上传的是之前上传失败的切片文件
-            if (file.index === 1 && file.status) {
-                this._concurrentRequest['flowType'] = 'done'
-                curProgress['status'](false)
-            } else {
-                if (!file.status) {
-                    // 修改进度状态并更新
-                    curProgress['status'](true)
-                    // 获取当前在切片列表的位置
-                    let curIndex = this._sliceList.findIndex(value => {
-                        return value.index === file.index
-                    })
-                    // 从切片列表删除当前切片
-                    this._sliceList.splice(curIndex, 1)
-                    // 由于之前上传失败没有减 1 ，所以在重新上传就等于是二次操作，多减 1
-                    this._concurrentRequest.count -= 1
-                } else {
-                    // 只有在初始化上传
-                    this._concurrentRequest['flowType'] = 'done'
-                }
+            if (!file.status) {
+                // 修改进度状态并更新
+                curProgress['status'](true)
+                // 获取当前在切片列表的位置
+                let curIndex = this._sliceList.findIndex(value => {
+                    return value.index === file.index
+                })
+                // 从切片列表删除当前切片
+                this._sliceList.splice(curIndex, 1)
+                // 由于之前上传失败没有减 1 ，所以在重新上传就等于是二次操作，多减 1
                 this._concurrentRequest.count -= 1
+            } else {
+                // 只有在初始化上传
+                this._concurrentRequest['flowType'] = 'done'
             }
+            this._concurrentRequest.count -= 1
             
         }).catch(() => {
             // 保证失败上传的计数只会多 1，而不是叠加
