@@ -16,7 +16,7 @@ export default class LargeFileUpload {
                 return false
             }
         }
-        this.setSliceList = null
+        this.setProgressList = null
         let target = {
             count: 0
         }
@@ -28,11 +28,11 @@ export default class LargeFileUpload {
         this._progressList = [] // 进度队列
         this._folder = new Date().getTime()
     }
-    addFile({ file, sliceSize = 1, totalConcurrent = 2, setSliceList }) {
+    addFile({ file, sliceSize = 1, totalConcurrent = 2, setProgressList }) {
         this._sliceSize = sliceSize * 1024 // 切割每份大小
         this._metaFile = file.file // 源文件
         this._totalConcurrent = totalConcurrent //总并发
-        this.setSliceList = setSliceList
+        this.setProgressList = setProgressList
         this.sliceFile()
     }
     /**
@@ -64,7 +64,7 @@ export default class LargeFileUpload {
             this._progressList.push(obj)
             start = end
         }
-        this.setSliceList(this._progressList)
+        this.setProgressList(this._progressList)
         this.startConcurrent()
     }
     /**
@@ -75,19 +75,36 @@ export default class LargeFileUpload {
             this.sliceRefresh()
         }
     }
-    /**
-     * uploadFile 上传文件
-     * @param {file} file 对象
-     */
-    uploadFile(file) {
+    // 设置接口数据
+    setFormData(file) {
         const { filename } = file
         let formData = new FormData()
         formData.set('file', file.file, filename)
         // 切片文件后端存放位置
         formData.set('foldname', this._folder)
+        return formData
+    }
+    // 更新进度并渲染
+    updateProgress(file) {
         let curProgress = this._progressList[file.index - 1]
-        curProgress.progress = 0
-        this.setSliceList([...this._progressList])
+        return {
+            'progress': progress => {
+                curProgress.progress = progress
+                this.setProgressList([...this._progressList])
+            },
+            'status': status => {
+                curProgress.status = status
+                this.setProgressList([...this._progressList])
+            }
+        }
+    }
+    /**
+     * uploadFile 上传文件
+     * @param {file} file 对象
+     */
+    uploadFile(file) {
+        const curProgress = this.updateProgress(file)
+        curProgress['progress'](0)
         axiosInstance({
             url: '/blob',
             method: 'post',
@@ -96,32 +113,40 @@ export default class LargeFileUpload {
             },
             onUploadProgress: e => {
                 const { loaded, total } = e
-                curProgress.progress = Math.ceil(loaded / total * 100)
-                this.setSliceList([...this._progressList])
+                curProgress['progress'](Math.ceil(loaded / total * 100))
             },
-            data: formData
+            data: this.setFormData(file)
         }).then(() => {
-            this._concurrentRequest['flowType'] = 'done'
-            if ((file.index === 1 || file.index === 3) && curProgress.status) {
-                curProgress.status = false
-                this.setSliceList([...this._progressList])
+            // 如果上传的是之前上传失败的切片文件
+            if (file.index === 1 && file.status) {
+                this._concurrentRequest['flowType'] = 'done'
+                curProgress['status'](false)
             } else {
-                if (!curProgress.status) {
-                    curProgress.status = true
-                    this.setSliceList([...this._progressList])
+                if (!file.status) {
+                    // 修改进度状态并更新
+                    curProgress['status'](true)
+                    // 获取当前在切片列表的位置
                     let curIndex = this._sliceList.findIndex(value => {
                         return value.index === file.index
                     })
+                    // 从切片列表删除当前切片
                     this._sliceList.splice(curIndex, 1)
-                    this._concurrentRequest['count'] = this._concurrentRequest.count - 1
+                    // 由于之前上传失败没有减 1 ，所以在重新上传就等于是二次操作，多减 1
+                    this._concurrentRequest.count -= 1
+                } else {
+                    // 只有在初始化上传
+                    this._concurrentRequest['flowType'] = 'done'
                 }
-                console.log(this._concurrentRequest['count'])
-                this._concurrentRequest['count'] = this._concurrentRequest.count - 1
+                this._concurrentRequest.count -= 1
             }
             
         }).catch(() => {
-            curProgress.status = false
-            this.setSliceList([...this._progressList])
+            // 保证失败上传的计数只会多 1，而不是叠加
+            if (!curProgress.status) {
+                this._concurrentRequest.count -= 1
+            }
+            this._concurrentRequest['flowType'] = 'done'
+            curProgress['status'](false)
         })
     }
     /**

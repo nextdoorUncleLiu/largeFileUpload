@@ -7,17 +7,17 @@ import './App.css'
 
 let largeFileUpload = new LargeFileUpload()
 function App() {
-  const [sliceList, setSliceList] = useState([])
+  const [progressList, setProgressList] = useState([])
   const props = {
     name: 'file',
     action: '',
     fileList: [],
     customRequest: file => {
-      setSliceList([])
+      setProgressList([])
       largeFileUpload.addFile({
         file,
         sliceSize: 1024 * 10,
-        setSliceList
+        setProgressList
       })
       console.log(largeFileUpload)
     }
@@ -29,9 +29,9 @@ function App() {
           <UploadOutlined /> Click to Upload
         </Button>
       </Upload>
-      {sliceList.length ? 
+      {progressList.length ? 
         <div className="slice-list-container">
-          {sliceList.map((item, index) => {
+          {progressList.map((item, index) => {
               return (
                 <>
                   <span>{item.filename}</span>
