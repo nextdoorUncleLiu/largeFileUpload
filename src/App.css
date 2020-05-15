@@ -9,3 +9,10 @@ body {
   padding-right: 25px;
   border: 1px solid #999999;
 }
+.file-container {
+  display: flex;
+  
+}
+.file-container >div {
+  width: 50%;
+}
